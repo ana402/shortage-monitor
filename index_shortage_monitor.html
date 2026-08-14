@@ -1,0 +1,1665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KÄRCHER Shortage Monitor</title>
+
+  <!-- SheetJS for reading XLSX files directly in the browser -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root{
+      --yellow:#FFD800;
+      --black:#111111;
+      --bg:#f5f5f5;
+      --white:#ffffff;
+      --red:#d32f2f;
+      --green:#2e7d32;
+      --gray:#666;
+      --border:#dddddd;
+      --shadow:0 2px 10px rgba(0,0,0,.08);
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      background:var(--bg);
+      color:var(--black);
+    }
+
+    .page{
+      width:min(1500px,96%);
+      margin:24px auto 60px;
+    }
+
+    .hero{
+      background:var(--black);
+      border-bottom:10px solid var(--yellow);
+      border-radius:14px;
+      padding:25px 28px;
+      margin-bottom:22px;
+    }
+
+    .brand{
+      color:var(--yellow);
+      font-size:44px;
+      font-weight:900;
+      letter-spacing:1px;
+    }
+
+    .subtitle{
+      color:white;
+      margin-top:5px;
+      font-size:18px;
+    }
+
+    .card{
+      background:white;
+      border-radius:14px;
+      padding:22px;
+      margin:18px 0;
+      box-shadow:var(--shadow);
+    }
+
+    .step{
+      display:inline-block;
+      background:var(--yellow);
+      font-size:12px;
+      font-weight:900;
+      border-radius:999px;
+      padding:6px 10px;
+      margin-bottom:8px;
+    }
+
+    h2,h3{margin:4px 0 14px}
+    .muted{color:var(--gray)}
+
+    .upload-grid,
+    .filters,
+    .metric-grid{
+      display:grid;
+      gap:14px;
+    }
+
+    .upload-grid{grid-template-columns:1fr 1fr}
+    .filters{grid-template-columns:repeat(4,1fr)}
+    .metric-grid{grid-template-columns:repeat(5,1fr)}
+
+    .upload-box{
+      border:2px dashed var(--yellow);
+      border-radius:12px;
+      padding:20px;
+      background:white;
+    }
+
+    .upload-box strong{
+      display:block;
+      margin-bottom:10px;
+    }
+
+    input[type=file],
+    input[type=number],
+    select{
+      width:100%;
+      padding:10px;
+      border:1px solid #bbb;
+      border-radius:8px;
+      background:white;
+    }
+
+    label{
+      display:block;
+      font-size:13px;
+      font-weight:800;
+      margin-bottom:6px;
+    }
+
+    button,.button{
+      display:inline-block;
+      background:var(--yellow);
+      color:var(--black);
+      border:none;
+      border-radius:9px;
+      padding:12px 18px;
+      font-weight:900;
+      cursor:pointer;
+      text-decoration:none;
+    }
+
+    button:hover,.button:hover{filter:brightness(.96)}
+
+    .button-dark{
+      background:#222;
+      color:white;
+    }
+
+    .toolbar{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+
+    .metric{
+      border-radius:12px;
+      padding:16px;
+      background:#fafafa;
+      border:1px solid #eee;
+    }
+
+    .metric span{
+      display:block;
+      color:#666;
+      font-size:13px;
+      font-weight:700;
+    }
+
+    .metric strong{
+      display:block;
+      font-size:30px;
+      margin-top:5px;
+    }
+
+    .alert{
+      border-radius:10px;
+      padding:13px 15px;
+      font-weight:700;
+      margin:12px 0;
+    }
+
+    .error{
+      background:#fde1e1;
+      border-left:5px solid var(--red);
+    }
+
+    .success{
+      background:#e3f3e5;
+      border-left:5px solid var(--green);
+    }
+
+    .warning{
+      background:#fff4cf;
+      border-left:5px solid #e6b800;
+    }
+
+    .table-wrap,
+    .projection-scroll{
+      overflow-x:auto;
+      max-width:100%;
+    }
+
+    table{
+      width:100%;
+      border-collapse:collapse;
+      white-space:nowrap;
+    }
+
+    th,td{
+      border:1px solid var(--border);
+      padding:9px 10px;
+      text-align:center;
+    }
+
+    thead th{
+      background:var(--black);
+      color:white;
+    }
+
+    .projection th:first-child,
+    .projection td:first-child{
+      position:sticky;
+      left:0;
+      z-index:2;
+      background:var(--black);
+      color:white;
+      font-weight:800;
+    }
+
+    .inv-green{
+      background:var(--green);
+      color:white;
+      font-weight:800;
+    }
+
+    .inv-red{
+      background:var(--red);
+      color:white;
+      font-weight:800;
+    }
+
+    .po-yellow{
+      background:var(--yellow);
+      font-weight:800;
+    }
+
+    .hidden{display:none!important}
+
+    .manual-row{
+      display:grid;
+      grid-template-columns:1fr 220px 220px;
+      gap:12px;
+      align-items:end;
+    }
+
+    .status-line{
+      font-size:14px;
+      margin-top:10px;
+    }
+
+    @media(max-width:900px){
+      .upload-grid,.filters,.metric-grid,.manual-row{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+<div class="page">
+
+  <header class="hero">
+    <div class="brand">KÄRCHER</div>
+    <div class="subtitle">Shortage Monitor - Open PO Projection</div>
+  </header>
+
+  <section class="card">
+    <div class="step">STEP 1</div>
+    <h2>Upload SAP Files</h2>
+
+    <p class="muted">
+      Only materials with <strong>Planned Deliv. Time &gt; 60 days</strong> are included.
+      KB/VMI exempt vendors remain excluded.
+    </p>
+
+    <div class="upload-grid">
+      <div class="upload-box">
+        <strong>Pipeline_Rate.XLSX</strong>
+        <input id="pipelineFile" type="file" accept=".xlsx,.xls" />
+      </div>
+
+      <div class="upload-box">
+        <strong>ME2N.XLSX</strong>
+        <input id="me2nFile" type="file" accept=".xlsx,.xls" />
+      </div>
+    </div>
+
+    <button id="generateBtn">⚡ Generate Shortage Analysis</button>
+
+    <div id="processMessage"></div>
+  </section>
+
+  <div id="analysisArea" class="hidden">
+
+    <section class="card">
+      <div class="toolbar">
+        <div>
+          <div class="step">GENERATED</div>
+          <h2 style="margin-bottom:4px">Shortage Monitor Input</h2>
+          <div id="summaryText" class="muted"></div>
+        </div>
+
+        <button id="downloadCsvBtn">⬇ Download shortage_monitor_input.csv</button>
+      </div>
+
+      <div id="generationMetrics" class="metric-grid" style="margin-top:18px"></div>
+    </section>
+
+    <section class="card">
+      <div class="step">STEP 2</div>
+      <h2>Shortage Analysis</h2>
+
+      <div class="filters">
+        <div>
+          <label>MRP Controller</label>
+          <select id="mrpSelect"></select>
+        </div>
+
+        <div>
+          <label>Vendor</label>
+          <select id="vendorSelect"></select>
+        </div>
+
+        <div>
+          <label>Material</label>
+          <select id="materialSelect"></select>
+        </div>
+
+        <div>
+          <label>Recommendation Method</label>
+          <select id="methodSelect">
+            <option>Earliest Delivery First</option>
+            <option>Oldest PO First</option>
+            <option>Newest PO First</option>
+            <option>Highest Qty First</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section id="alertsCard" class="card">
+      <h2>Current Scenario Alerts</h2>
+      <div id="alertsMessage"></div>
+      <div id="alertsTable"></div>
+    </section>
+
+    <section class="card">
+      <h2 id="materialTitle">Material</h2>
+      <div id="plannedTimeLine" class="muted"></div>
+      <div id="metrics" class="metric-grid" style="margin-top:18px"></div>
+    </section>
+
+    <section class="card">
+      <h2>Open POs</h2>
+      <div id="openPoTable" class="table-wrap"></div>
+    </section>
+
+    <section class="card">
+      <h2>Current Scenario</h2>
+      <div id="currentScenario" class="projection-scroll"></div>
+    </section>
+
+    <section class="card">
+      <h2>Recommended Scenario</h2>
+      <div id="recommendedScenario" class="projection-scroll"></div>
+    </section>
+
+    <section class="card">
+      <h2>Recommended PO Moves</h2>
+      <div id="recommendedMoves"></div>
+    </section>
+
+    <section class="card">
+      <h2>Manual OP Rate Scenario</h2>
+
+      <div class="manual-row">
+        <div>
+          <label>Manual Weekly OP Rate</label>
+          <input id="manualRate" type="number" min="0" step="0.5" />
+        </div>
+
+        <div>
+          <button id="runManualBtn">Run Manual Scenario</button>
+        </div>
+
+        <div id="manualRateCaption" class="muted"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Manual Scenario - Before moving POs</h2>
+      <div id="manualBefore" class="projection-scroll"></div>
+      <div id="manualBeforeMessage"></div>
+    </section>
+
+    <section class="card">
+      <h2>Manual Scenario - After recommended PO movements</h2>
+      <div id="manualAfter" class="projection-scroll"></div>
+      <div id="manualAfterMessage"></div>
+    </section>
+
+    <section class="card">
+      <h2>Manual Scenario Recommended PO Moves</h2>
+      <div id="manualMoves"></div>
+    </section>
+
+    <section class="card">
+      <div id="finalStatus"></div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================
+   CONSTANTS
+   ========================================================= */
+
+const EXEMPT_VENDORS = new Set([
+  "900122619",
+  "900123950",
+  "900124937",
+  "900124950",
+  "900125497",
+  "900136472",
+  "900136476",
+  "900136566",
+  "900153184",
+  "900160934",
+  "900161061",
+  "900164125",
+  "900172872",
+  "900177819",
+  "900180153",
+  "900183260",
+  "900183699",
+  "900125693"
+]);
+
+let shortageData = [];
+let generationStats = {};
+let currentMaterialRows = [];
+
+
+/* =========================================================
+   GENERIC HELPERS
+   ========================================================= */
+
+function normalizeHeader(value) {
+  return String(value ?? "")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanText(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\.0$/, "");
+}
+
+function normalizeVendor(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\.0$/, "")
+    .replace(/\s+/g, "");
+}
+
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") return 0;
+
+  const cleaned = String(value)
+    .replace(/,/g, "")
+    .replace(/−/g, "-")
+    .trim();
+
+  const num = Number(cleaned);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function ceil(value) {
+  return Math.ceil(Number(value) || 0);
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.filter(v => String(v).trim() !== ""))]
+    .sort((a,b) => String(a).localeCompare(String(b), undefined, {numeric:true}));
+}
+
+function safeDate(value) {
+  if (!value) return null;
+
+  if (value instanceof Date && !isNaN(value)) return value;
+
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) {
+      return new Date(parsed.y, parsed.m - 1, parsed.d);
+    }
+  }
+
+  const text = String(value).trim();
+
+  const dmy = text.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    return new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+  }
+
+  const parsed = new Date(text);
+  return isNaN(parsed) ? null : parsed;
+}
+
+function formatDateDMY(date) {
+  if (!(date instanceof Date) || isNaN(date)) return "";
+  const dd = String(date.getDate()).padStart(2,"0");
+  const mm = String(date.getMonth()+1).padStart(2,"0");
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function isoWeek(date) {
+  if (!(date instanceof Date) || isNaN(date)) return null;
+
+  const temp = new Date(Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ));
+
+  const dayNum = temp.getUTCDay() || 7;
+  temp.setUTCDate(temp.getUTCDate() + 4 - dayNum);
+
+  const yearStart = new Date(Date.UTC(temp.getUTCFullYear(),0,1));
+  return Math.ceil((((temp - yearStart) / 86400000) + 1) / 7);
+}
+
+function currentIsoWeek() {
+  return isoWeek(new Date());
+}
+
+function parsePODateForSort(value) {
+  const d = safeDate(value);
+  return d ? d.getTime() : 0;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+}
+
+function downloadText(filename, text, mime="text/plain;charset=utf-8") {
+  const blob = new Blob([text], {type:mime});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+
+/* =========================================================
+   XLSX READING
+   ========================================================= */
+
+async function readExcelFile(file) {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, {type:"array", cellDates:true});
+  const firstSheet = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheet];
+
+  const rows = XLSX.utils.sheet_to_json(worksheet, {
+    defval:"",
+    raw:true
+  });
+
+  return rows.map(row => {
+    const cleaned = {};
+    Object.entries(row).forEach(([key,val]) => {
+      cleaned[normalizeHeader(key)] = val;
+    });
+    return cleaned;
+  });
+}
+
+function firstExistingColumn(rows, candidates) {
+  if (!rows.length) return null;
+  const columns = new Set(Object.keys(rows[0]));
+  return candidates.find(c => columns.has(c)) || null;
+}
+
+function validateColumns(rows, required, fileName) {
+  if (!rows.length) {
+    throw new Error(`${fileName} is empty.`);
+  }
+
+  const columns = new Set(Object.keys(rows[0]));
+  const missing = required.filter(c => !columns.has(c));
+
+  if (missing.length) {
+    throw new Error(
+      `Faltan columnas en ${fileName}: ${missing.join(", ")}`
+    );
+  }
+}
+
+
+/* =========================================================
+   BUILD SHORTAGE INPUT
+   Same logic as the Python generator
+   ========================================================= */
+
+function buildShortageInput(pipelineRows, me2nRows) {
+
+  const pipelineRequired = [
+    "Material",
+    "Plant",
+    "Unrestricted",
+    "Pck.Req Qnty",
+    "Mf.Al Qnty",
+    "Daily rate",
+    "Monthly service rate",
+    "Planned Deliv. Time"
+  ];
+
+  validateColumns(
+    pipelineRows,
+    pipelineRequired,
+    "Pipeline_Rate.XLSX"
+  );
+
+  const mrpcColumn = firstExistingColumn(
+    pipelineRows,
+    ["MRP Controller", "MRP controller", "MRPC"]
+  );
+
+  const buyerColumn = firstExistingColumn(
+    pipelineRows,
+    [
+      "MRP controller name",
+      "MRP Controller Name",
+      "Description p. group",
+      "Buyer"
+    ]
+  );
+
+  const pipelineClean = pipelineRows
+    .map(r => ({
+      Material: cleanText(r["Material"]),
+      Plant: cleanText(r["Plant"]),
+      Unrestricted: toNumber(r["Unrestricted"]),
+      PckReq: toNumber(r["Pck.Req Qnty"]),
+      MfAl: toNumber(r["Mf.Al Qnty"]),
+      DailyRate: toNumber(r["Daily rate"]),
+      MonthlyServiceRate: toNumber(r["Monthly service rate"]),
+      PlannedDelivTime: toNumber(r["Planned Deliv. Time"]),
+      MRPC: mrpcColumn ? cleanText(r[mrpcColumn]) : "",
+      Buyer: buyerColumn ? cleanText(r[buyerColumn]) : ""
+    }))
+    .filter(r => r.PlannedDelivTime > 60)
+    .map(r => ({
+      ...r,
+      TotalValue: r.PckReq + r.MfAl,
+      RealDRValue: r.DailyRate + (r.MonthlyServiceRate / 20)
+    }));
+
+  // Summarize Pipeline by Material + Plant
+  const pipelineMap = new Map();
+
+  for (const r of pipelineClean) {
+    const key = `${r.Material}|||${r.Plant}`;
+
+    if (!pipelineMap.has(key)) {
+      pipelineMap.set(key, {
+        Material:r.Material,
+        Plant:r.Plant,
+        Stock:0,
+        Alloc:0,
+        DR:0,
+        MRPC:r.MRPC,
+        Buyer:r.Buyer,
+        PlannedDelivTime:r.PlannedDelivTime
+      });
+    }
+
+    const x = pipelineMap.get(key);
+    x.Stock += r.Unrestricted;
+    x.Alloc += r.TotalValue;
+    x.DR += r.RealDRValue;
+  }
+
+  const me2nRequired = [
+    "Material",
+    "Purchasing Document",
+    "Item",
+    "Document Date",
+    "Delivery Date",
+    "Short Text",
+    "Vendor/supplying plant",
+    "Plant",
+    "Still to be delivered (qty)"
+  ];
+
+  validateColumns(
+    me2nRows,
+    me2nRequired,
+    "ME2N.XLSX"
+  );
+
+  const poReqSource = firstExistingColumn(
+    me2nRows,
+    [
+      "Purchase Requisition",
+      "Purchase requisition",
+      "Purch. Requisition",
+      "Requisition",
+      "PO Req"
+    ]
+  );
+
+  const merged = [];
+
+  for (const r of me2nRows) {
+    const material = cleanText(r["Material"]);
+    const plant = cleanText(r["Plant"]);
+    const key = `${material}|||${plant}`;
+
+    // INNER JOIN:
+    // if Pipeline material did not pass >60 days, it is not included
+    const p = pipelineMap.get(key);
+    if (!p) continue;
+
+    const vendor = normalizeVendor(r["Vendor/supplying plant"]);
+
+    const deliveryDate = safeDate(r["Delivery Date"]);
+    const documentDate = safeDate(r["Document Date"]);
+
+    merged.push({
+      "Buyer": p.Buyer,
+      "MRP Controller": p.MRPC,
+      "Material": material,
+      "Planned Deliv. Time": p.PlannedDelivTime,
+      "PO": cleanText(r["Purchasing Document"]),
+      "Ln": cleanText(r["Item"]),
+      "PO Date": formatDateDMY(documentDate),
+      "PO Deliv": formatDateDMY(deliveryDate),
+      "Week": isoWeek(deliveryDate),
+      "PO Req": poReqSource ? cleanText(r[poReqSource]) : "",
+      "Short Text": cleanText(r["Short Text"]),
+      "Vendor/supplying plant": vendor,
+      "Plant": plant,
+      "Open PO Qty": toNumber(r["Still to be delivered (qty)"]),
+      "Stock": p.Stock,
+      "Alloc": p.Alloc,
+      "DR": p.DR,
+      "Op Rate": ceil(p.DR * 5)
+    });
+  }
+
+  const rowsBeforeExemption = merged.length;
+
+  const excludedRows = merged.filter(
+    r => EXEMPT_VENDORS.has(r["Vendor/supplying plant"])
+  );
+
+  const finalRows = merged.filter(
+    r => !EXEMPT_VENDORS.has(r["Vendor/supplying plant"])
+  );
+
+  finalRows.sort((a,b) => {
+    const keys = [
+      "Buyer",
+      "MRP Controller",
+      "Vendor/supplying plant",
+      "Material",
+      "PO Deliv",
+      "PO",
+      "Ln"
+    ];
+
+    for (const k of keys) {
+      const cmp = String(a[k] ?? "").localeCompare(
+        String(b[k] ?? ""),
+        undefined,
+        {numeric:true}
+      );
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  });
+
+  return {
+    rows: finalRows,
+    stats: {
+      rowsBeforeExemption,
+      excludedVendorCount: new Set(
+        excludedRows.map(r => r["Vendor/supplying plant"])
+      ).size,
+      excludedRowCount: excludedRows.length,
+      finalRows: finalRows.length,
+      materials: new Set(finalRows.map(r => r["Material"])).size
+    }
+  };
+}
+
+
+/* =========================================================
+   SHORTAGE MONITOR LOGIC
+   ========================================================= */
+
+function calculateProjection(stock, opRate, poByWeek, startWeek, endWeek) {
+  let inventory = Number(stock) || 0;
+  const rows = [];
+
+  for (let week = startWeek; week <= endWeek; week++) {
+    const poQty = Number(poByWeek[week] || 0);
+    inventory = inventory - opRate + poQty;
+
+    rows.push({
+      Week:week,
+      "Op Rate":Math.trunc(opRate),
+      "PO Receipt":Math.round(poQty),
+      "Projected Inventory":Math.round(inventory)
+    });
+  }
+
+  return rows;
+}
+
+function calculateProjectionDecimal(stock, opRate, poByWeek, startWeek, endWeek) {
+  let inventory = Number(stock) || 0;
+  const rows = [];
+
+  for (let week = startWeek; week <= endWeek; week++) {
+    const poQty = Number(poByWeek[week] || 0);
+    inventory = inventory - Number(opRate) + poQty;
+
+    rows.push({
+      Week:week,
+      "Op Rate":Number(Number(opRate).toFixed(1)),
+      "PO Receipt":Math.round(poQty),
+      "Projected Inventory":Number(inventory.toFixed(1))
+    });
+  }
+
+  return rows;
+}
+
+function recommendPoMoves(stock, opRate, poList, startWeek, endWeek) {
+  const recommendedPos = [];
+
+  const validPos = poList
+    .map(po => ({
+      PO:po.PO ?? "",
+      Week:Number(po.Week),
+      "Open PO Qty":Number(po["Open PO Qty"])
+    }))
+    .filter(po =>
+      Number.isFinite(po.Week) &&
+      Number.isFinite(po["Open PO Qty"]) &&
+      po["Open PO Qty"] > 0
+    );
+
+  const poByWeek = {};
+
+  for (const po of validPos) {
+    poByWeek[po.Week] =
+      (poByWeek[po.Week] || 0) + po["Open PO Qty"];
+  }
+
+  const availablePos = [...validPos];
+  let inventory = Number(stock) || 0;
+
+  for (let week = startWeek; week <= endWeek; week++) {
+    const currentReceipt = Number(poByWeek[week] || 0);
+    inventory = inventory - Number(opRate) + currentReceipt;
+
+    while (inventory <= 0) {
+      const futurePoIndex = availablePos.findIndex(
+        po => po.Week > week
+      );
+
+      if (futurePoIndex === -1) break;
+
+      const nextPo = availablePos.splice(futurePoIndex,1)[0];
+
+      const movedQty = nextPo["Open PO Qty"];
+      const originalWeek = nextPo.Week;
+
+      poByWeek[originalWeek] =
+        (poByWeek[originalWeek] || 0) - movedQty;
+
+      poByWeek[week] =
+        (poByWeek[week] || 0) + movedQty;
+
+      inventory += movedQty;
+
+      recommendedPos.push({
+        PO:nextPo.PO,
+        Qty:Math.round(movedQty),
+        "Current Week":originalWeek,
+        "Recommended Week":week,
+        Action:"Expedite"
+      });
+    }
+  }
+
+  Object.keys(poByWeek).forEach(k => {
+    if (poByWeek[k] <= 0) delete poByWeek[k];
+  });
+
+  return {
+    recommendations:recommendedPos,
+    poByWeek
+  };
+}
+
+function groupPoByWeek(rows) {
+  const result = {};
+
+  for (const r of rows) {
+    const week = Number(r.Week);
+    const qty = Number(r["Open PO Qty"]);
+
+    if (!Number.isFinite(week) || !Number.isFinite(qty)) continue;
+
+    result[week] = (result[week] || 0) + qty;
+  }
+
+  return result;
+}
+
+function buildCurrentShortageSummary(rows, startWeek, endWeek) {
+  const materialMap = new Map();
+
+  rows.forEach(r => {
+    const mat = r.Material;
+    if (!materialMap.has(mat)) materialMap.set(mat, []);
+    materialMap.get(mat).push(r);
+  });
+
+  const summary = [];
+
+  for (const [material, matRows] of materialMap.entries()) {
+    if (!matRows.length) continue;
+
+    const stock = Math.round(Number(matRows[0].Stock) || 0);
+    const dr = Number(matRows[0].DR) || 0;
+    const opRate = Math.ceil(dr * 5);
+
+    const poByWeek = groupPoByWeek(matRows);
+
+    const projection = calculateProjection(
+      stock,
+      opRate,
+      poByWeek,
+      startWeek,
+      endWeek
+    );
+
+    const shortageRows = projection.filter(
+      r => r["Projected Inventory"] < 0
+    );
+
+    if (!shortageRows.length) continue;
+
+    const minimumInventory = Math.min(
+      ...projection.map(r => r["Projected Inventory"])
+    );
+
+    summary.push({
+      Material:material,
+      "First Red Week":`W${shortageRows[0].Week}`,
+      "First Red Week Sort":shortageRows[0].Week,
+      "Minimum Inventory":minimumInventory,
+      "Open POs":new Set(matRows.map(r => r.PO)).size
+    });
+  }
+
+  summary.sort((a,b) =>
+    a["First Red Week Sort"] - b["First Red Week Sort"] ||
+    a["Minimum Inventory"] - b["Minimum Inventory"] ||
+    String(a.Material).localeCompare(String(b.Material))
+  );
+
+  return summary;
+}
+
+
+/* =========================================================
+   CSV
+   ========================================================= */
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g,'""')}"`;
+  }
+  return text;
+}
+
+function buildCsv(rows) {
+  if (!rows.length) return "";
+
+  const headers = [
+    "Buyer",
+    "MRP Controller",
+    "Material",
+    "Planned Deliv. Time",
+    "PO",
+    "Ln",
+    "PO Date",
+    "PO Deliv",
+    "Week",
+    "PO Req",
+    "Short Text",
+    "Vendor/supplying plant",
+    "Plant",
+    "Open PO Qty",
+    "Stock",
+    "Alloc",
+    "DR",
+    "Op Rate"
+  ];
+
+  const lines = [headers.join(",")];
+
+  rows.forEach(r => {
+    lines.push(
+      headers.map(h => csvEscape(r[h])).join(",")
+    );
+  });
+
+  return "\ufeff" + lines.join("\r\n");
+}
+
+
+/* =========================================================
+   RENDER HELPERS
+   ========================================================= */
+
+function setOptions(select, values, selectedValue=null) {
+  select.innerHTML = "";
+
+  values.forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    if (selectedValue !== null && String(v) === String(selectedValue)) {
+      opt.selected = true;
+    }
+    select.appendChild(opt);
+  });
+}
+
+function renderGenerationMetrics() {
+  const el = document.getElementById("generationMetrics");
+
+  const metrics = [
+    ["Materials", generationStats.materials],
+    ["Final Lines", generationStats.finalRows],
+    ["KB/VMI Vendors Excluded", generationStats.excludedVendorCount],
+    ["Lines Excluded", generationStats.excludedRowCount]
+  ];
+
+  el.innerHTML = metrics.map(([label,val]) => `
+    <div class="metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(val)}</strong>
+    </div>
+  `).join("");
+
+  document.getElementById("summaryText").textContent =
+    "Pipeline + ME2N processed successfully.";
+}
+
+function renderAlerts(vendorRows) {
+  const startWeek = currentIsoWeek();
+  const alerts = buildCurrentShortageSummary(
+    vendorRows,
+    startWeek,
+    52
+  );
+
+  const msg = document.getElementById("alertsMessage");
+  const table = document.getElementById("alertsTable");
+
+  if (!alerts.length) {
+    msg.innerHTML = `
+      <div class="alert success">
+        No materials show red inventory in the Current Scenario.
+      </div>
+    `;
+    table.innerHTML = "";
+    return;
+  }
+
+  msg.innerHTML = `
+    <div class="alert error">
+      ${alerts.length} material(s) show red inventory in the Current Scenario.
+    </div>
+  `;
+
+  table.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Material</th>
+            <th>First Red Week</th>
+            <th>Minimum Inventory</th>
+            <th>Open POs</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${alerts.map(r => `
+            <tr>
+              <td>${escapeHtml(r.Material)}</td>
+              <td>${escapeHtml(r["First Red Week"])}</td>
+              <td>${escapeHtml(r["Minimum Inventory"])}</td>
+              <td>${escapeHtml(r["Open POs"])}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderMetrics(row) {
+  const startWeek = currentIsoWeek();
+  const stock = Math.round(Number(row.Stock) || 0);
+  const alloc = Math.round(Number(row.Alloc) || 0);
+  const dr = Number(row.DR) || 0;
+  const opRate = Math.ceil(dr * 5);
+
+  const metrics = [
+    ["Stock", stock],
+    ["Alloc", alloc],
+    ["DR", Number(dr.toFixed(1))],
+    ["Op Rate", opRate],
+    ["Current Week", `W${startWeek}`]
+  ];
+
+  document.getElementById("metrics").innerHTML =
+    metrics.map(([label,val]) => `
+      <div class="metric">
+        <span>${escapeHtml(label)}</span>
+        <strong>${escapeHtml(val)}</strong>
+      </div>
+    `).join("");
+
+  document.getElementById("plannedTimeLine").innerHTML =
+    `Planned Deliv. Time: <strong>${Math.round(Number(row["Planned Deliv. Time"]) || 0)} days</strong>`;
+}
+
+function renderOpenPOs(rows) {
+  const headers = [
+    "PO",
+    "PO Date",
+    "PO Deliv",
+    "Week",
+    "Open PO Qty",
+    "Vendor/supplying plant"
+  ];
+
+  document.getElementById("openPoTable").innerHTML = `
+    <table>
+      <thead>
+        <tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr>
+            ${headers.map(h => {
+              const val = h === "Week" && r[h] !== null
+                ? `W${r[h]}`
+                : r[h];
+              return `<td>${escapeHtml(val)}</td>`;
+            }).join("")}
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderProjection(targetId, rows) {
+  if (!rows.length) {
+    document.getElementById(targetId).innerHTML = "";
+    return;
+  }
+
+  document.getElementById(targetId).innerHTML = `
+    <table class="projection">
+      <thead>
+        <tr>
+          <th>Type</th>
+          ${rows.map(r => `<th>W${r.Week}</th>`).join("")}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Op Rate</td>
+          ${rows.map(r => `<td>${escapeHtml(r["Op Rate"])}</td>`).join("")}
+        </tr>
+        <tr>
+          <td>PO Receipt</td>
+          ${rows.map(r => `
+            <td class="${Number(r["PO Receipt"]) > 0 ? "po-yellow" : ""}">
+              ${escapeHtml(r["PO Receipt"])}
+            </td>
+          `).join("")}
+        </tr>
+        <tr>
+          <td>Projected Inventory</td>
+          ${rows.map(r => `
+            <td class="${Number(r["Projected Inventory"]) <= 0 ? "inv-red" : "inv-green"}">
+              ${escapeHtml(r["Projected Inventory"])}
+            </td>
+          `).join("")}
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMoves(targetId, rows, successText) {
+  const el = document.getElementById(targetId);
+
+  if (!rows.length) {
+    el.innerHTML = `<div class="alert success">${escapeHtml(successText)}</div>`;
+    return;
+  }
+
+  const headers = [
+    "PO",
+    "Qty",
+    "Current Week",
+    "Recommended Week",
+    "Action"
+  ];
+
+  el.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${escapeHtml(r.PO)}</td>
+              <td>${escapeHtml(r.Qty)}</td>
+              <td>W${escapeHtml(r["Current Week"])}</td>
+              <td>W${escapeHtml(r["Recommended Week"])}</td>
+              <td>${escapeHtml(r.Action)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+
+/* =========================================================
+   FILTERS + ANALYSIS
+   ========================================================= */
+
+function refreshFiltersAfterMRP() {
+  const mrp = document.getElementById("mrpSelect").value;
+
+  const vendors = uniqueSorted(
+    shortageData
+      .filter(r => r["MRP Controller"] === mrp)
+      .map(r => r["Vendor/supplying plant"])
+  );
+
+  setOptions(document.getElementById("vendorSelect"), vendors);
+  refreshFiltersAfterVendor();
+}
+
+function refreshFiltersAfterVendor() {
+  const mrp = document.getElementById("mrpSelect").value;
+  const vendor = document.getElementById("vendorSelect").value;
+
+  const materials = uniqueSorted(
+    shortageData
+      .filter(r =>
+        r["MRP Controller"] === mrp &&
+        r["Vendor/supplying plant"] === vendor
+      )
+      .map(r => r.Material)
+  );
+
+  setOptions(document.getElementById("materialSelect"), materials);
+
+  const vendorRows = shortageData.filter(r =>
+    r["MRP Controller"] === mrp &&
+    r["Vendor/supplying plant"] === vendor
+  );
+
+  renderAlerts(vendorRows);
+  runMainAnalysis();
+}
+
+function sortMaterialRows(rows, method) {
+  const copy = [...rows];
+
+  if (method === "Earliest Delivery First") {
+    copy.sort((a,b) => Number(a.Week) - Number(b.Week));
+  }
+  else if (method === "Oldest PO First") {
+    copy.sort((a,b) =>
+      parsePODateForSort(a["PO Date"]) -
+      parsePODateForSort(b["PO Date"])
+    );
+  }
+  else if (method === "Newest PO First") {
+    copy.sort((a,b) =>
+      parsePODateForSort(b["PO Date"]) -
+      parsePODateForSort(a["PO Date"])
+    );
+  }
+  else if (method === "Highest Qty First") {
+    copy.sort((a,b) =>
+      Number(b["Open PO Qty"]) -
+      Number(a["Open PO Qty"])
+    );
+  }
+
+  return copy;
+}
+
+function runMainAnalysis() {
+  const mrp = document.getElementById("mrpSelect").value;
+  const vendor = document.getElementById("vendorSelect").value;
+  const material = document.getElementById("materialSelect").value;
+  const method = document.getElementById("methodSelect").value;
+
+  if (!mrp || !vendor || !material) return;
+
+  let rows = shortageData.filter(r =>
+    r["MRP Controller"] === mrp &&
+    r["Vendor/supplying plant"] === vendor &&
+    r.Material === material
+  );
+
+  rows = sortMaterialRows(rows, method);
+  currentMaterialRows = rows;
+
+  if (!rows.length) return;
+
+  const first = rows[0];
+
+  const stock = Math.round(Number(first.Stock) || 0);
+  const dr = Number(first.DR) || 0;
+  const opRate = Math.ceil(dr * 5);
+  const startWeek = currentIsoWeek();
+  const endWeek = 52;
+
+  document.getElementById("materialTitle").textContent =
+    `Material: ${material}`;
+
+  renderMetrics(first);
+  renderOpenPOs(rows);
+
+  const poByWeekCurrent = groupPoByWeek(rows);
+
+  const currentProjection = calculateProjection(
+    stock,
+    opRate,
+    poByWeekCurrent,
+    startWeek,
+    endWeek
+  );
+
+  renderProjection("currentScenario", currentProjection);
+
+  const poList = rows.map(r => ({
+    PO:r.PO,
+    Week:r.Week,
+    "Open PO Qty":r["Open PO Qty"]
+  }));
+
+  const recommended = recommendPoMoves(
+    stock,
+    opRate,
+    poList,
+    startWeek,
+    endWeek
+  );
+
+  const recommendedProjection = calculateProjection(
+    stock,
+    opRate,
+    recommended.poByWeek,
+    startWeek,
+    endWeek
+  );
+
+  renderProjection(
+    "recommendedScenario",
+    recommendedProjection
+  );
+
+  renderMoves(
+    "recommendedMoves",
+    recommended.recommendations,
+    "No se requieren movimientos de PO."
+  );
+
+  document.getElementById("manualRate").value =
+    Number(opRate).toFixed(1);
+
+  document.getElementById("manualRateCaption").textContent =
+    `Original OP Rate: ${Number(opRate).toFixed(1)}`;
+
+  runManualScenario();
+
+  const negatives = currentProjection.filter(
+    r => r["Projected Inventory"] < 0
+  );
+
+  if (negatives.length) {
+    const worst = Math.min(
+      ...currentProjection.map(r => r["Projected Inventory"])
+    );
+
+    document.getElementById("finalStatus").innerHTML = `
+      <div class="alert error">
+        CRITICAL: El material entra en negativo en W${negatives[0].Week}.
+        Inventario mínimo proyectado: ${worst}
+      </div>
+    `;
+  } else {
+    document.getElementById("finalStatus").innerHTML = `
+      <div class="alert success">
+        OK: No hay shortage proyectado.
+      </div>
+    `;
+  }
+}
+
+function runManualScenario() {
+  if (!currentMaterialRows.length) return;
+
+  const first = currentMaterialRows[0];
+
+  const stock = Math.round(Number(first.Stock) || 0);
+  const dr = Number(first.DR) || 0;
+  const originalOpRate = Math.ceil(dr * 5);
+  const manualRate = Number(
+    document.getElementById("manualRate").value
+  );
+
+  const rate = Number.isFinite(manualRate)
+    ? manualRate
+    : originalOpRate;
+
+  const startWeek = currentIsoWeek();
+  const endWeek = 52;
+
+  const poByWeekCurrent = groupPoByWeek(currentMaterialRows);
+
+  const manualCurrent = calculateProjectionDecimal(
+    stock,
+    rate,
+    poByWeekCurrent,
+    startWeek,
+    endWeek
+  );
+
+  renderProjection("manualBefore", manualCurrent);
+
+  const beforeNegative = manualCurrent.filter(
+    r => r["Projected Inventory"] < 0
+  );
+
+  if (beforeNegative.length) {
+    document.getElementById("manualBeforeMessage").innerHTML = `
+      <div class="alert warning">
+        With a weekly OP Rate of ${rate.toFixed(1)},
+        the first shortage occurs in W${beforeNegative[0].Week}.
+      </div>
+    `;
+  } else {
+    document.getElementById("manualBeforeMessage").innerHTML = "";
+  }
+
+  const poList = currentMaterialRows.map(r => ({
+    PO:r.PO,
+    Week:r.Week,
+    "Open PO Qty":r["Open PO Qty"]
+  }));
+
+  const manualRecommended = recommendPoMoves(
+    stock,
+    rate,
+    poList,
+    startWeek,
+    endWeek
+  );
+
+  const manualAfter = calculateProjectionDecimal(
+    stock,
+    rate,
+    manualRecommended.poByWeek,
+    startWeek,
+    endWeek
+  );
+
+  renderProjection("manualAfter", manualAfter);
+
+  renderMoves(
+    "manualMoves",
+    manualRecommended.recommendations,
+    "No PO movements are required for the manual scenario."
+  );
+
+  const remainingNegative = manualAfter.filter(
+    r => r["Projected Inventory"] < 0
+  );
+
+  if (!remainingNegative.length) {
+    document.getElementById("manualAfterMessage").innerHTML = `
+      <div class="alert success">
+        MANUAL SCENARIO: The recommended PO actions prevent shortage through W52.
+      </div>
+    `;
+  } else {
+    document.getElementById("manualAfterMessage").innerHTML = `
+      <div class="alert error">
+        MANUAL SCENARIO: Inventory remains negative from
+        W${remainingNegative[0].Week}; existing POs are not sufficient.
+      </div>
+    `;
+  }
+
+  document.getElementById("manualRateCaption").textContent =
+    `Original OP Rate: ${originalOpRate.toFixed(1)} | Manual OP Rate: ${rate.toFixed(1)}`;
+}
+
+
+/* =========================================================
+   GENERATE
+   ========================================================= */
+
+document.getElementById("generateBtn").addEventListener("click", async () => {
+  const pipelineFile = document.getElementById("pipelineFile").files[0];
+  const me2nFile = document.getElementById("me2nFile").files[0];
+  const msg = document.getElementById("processMessage");
+
+  if (!pipelineFile || !me2nFile) {
+    msg.innerHTML = `
+      <div class="alert warning">
+        Selecciona Pipeline_Rate.XLSX y ME2N.XLSX.
+      </div>
+    `;
+    return;
+  }
+
+  msg.innerHTML = `
+    <div class="alert warning">
+      Processing files...
+    </div>
+  `;
+
+  try {
+    const [pipelineRows, me2nRows] = await Promise.all([
+      readExcelFile(pipelineFile),
+      readExcelFile(me2nFile)
+    ]);
+
+    const result = buildShortageInput(
+      pipelineRows,
+      me2nRows
+    );
+
+    shortageData = result.rows;
+    generationStats = result.stats;
+
+    if (!shortageData.length) {
+      throw new Error(
+        "No records remained after Planned Deliv. Time > 60 and KB/VMI exclusions."
+      );
+    }
+
+    renderGenerationMetrics();
+
+    const mrps = uniqueSorted(
+      shortageData.map(r => r["MRP Controller"])
+    );
+
+    setOptions(document.getElementById("mrpSelect"), mrps);
+
+    document.getElementById("analysisArea")
+      .classList.remove("hidden");
+
+    refreshFiltersAfterMRP();
+
+    msg.innerHTML = `
+      <div class="alert success">
+        Shortage analysis generated successfully.
+      </div>
+    `;
+
+    document.getElementById("analysisArea")
+      .scrollIntoView({behavior:"smooth", block:"start"});
+
+  } catch (error) {
+    console.error(error);
+
+    msg.innerHTML = `
+      <div class="alert error">
+        ${escapeHtml(error.message || error)}
+      </div>
+    `;
+  }
+});
+
+
+/* =========================================================
+   EVENT LISTENERS
+   ========================================================= */
+
+document.getElementById("mrpSelect")
+  .addEventListener("change", refreshFiltersAfterMRP);
+
+document.getElementById("vendorSelect")
+  .addEventListener("change", refreshFiltersAfterVendor);
+
+document.getElementById("materialSelect")
+  .addEventListener("change", runMainAnalysis);
+
+document.getElementById("methodSelect")
+  .addEventListener("change", runMainAnalysis);
+
+document.getElementById("runManualBtn")
+  .addEventListener("click", runManualScenario);
+
+document.getElementById("downloadCsvBtn")
+  .addEventListener("click", () => {
+    const csv = buildCsv(shortageData);
+    downloadText(
+      "shortage_monitor_input.csv",
+      csv,
+      "text/csv;charset=utf-8"
+    );
+  });
+
+</script>
+</body>
+</html>
