@@ -311,6 +311,9 @@
     <section class="card">
       <div class="step">STEP 2</div>
       <h2>Shortage Analysis</h2>
+      <p class="muted">
+        Projection horizon: <strong>rolling 26 weeks (~6 months) from the current week</strong>.
+      </p>
 
       <div class="filters">
         <div>
@@ -419,6 +422,8 @@
 /* =========================================================
    CONSTANTS
    ========================================================= */
+
+const PROJECTION_WEEKS = 26;
 
 const EXEMPT_VENDORS = new Set([
   "900122619",
@@ -536,6 +541,78 @@ function isoWeek(date) {
 
   const yearStart = new Date(Date.UTC(temp.getUTCFullYear(),0,1));
   return Math.ceil((((temp - yearStart) / 86400000) + 1) / 7);
+}
+
+function isoWeekYear(date) {
+  if (!(date instanceof Date) || isNaN(date)) return null;
+
+  const temp = new Date(Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ));
+
+  const dayNum = temp.getUTCDay() || 7;
+  temp.setUTCDate(temp.getUTCDate() + 4 - dayNum);
+
+  return temp.getUTCFullYear();
+}
+
+function startOfIsoWeek(date) {
+  if (!(date instanceof Date) || isNaN(date)) return null;
+
+  const d = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  );
+
+  const day = d.getDay() || 7;
+  d.setDate(d.getDate() - day + 1);
+  d.setHours(0,0,0,0);
+
+  return d;
+}
+
+function weekKeyFromDate(date) {
+  const weekStart = startOfIsoWeek(date);
+  if (!weekStart) return "";
+
+  const yyyy = weekStart.getFullYear();
+  const mm = String(weekStart.getMonth() + 1).padStart(2,"0");
+  const dd = String(weekStart.getDate()).padStart(2,"0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatWeekLabel(date) {
+  if (!(date instanceof Date) || isNaN(date)) return "";
+
+  const week = String(isoWeek(date)).padStart(2,"0");
+  const year = isoWeekYear(date);
+
+  return `W${week}-${year}`;
+}
+
+function buildRollingWeeks(count = PROJECTION_WEEKS) {
+  const firstWeek = startOfIsoWeek(new Date());
+  const weeks = [];
+
+  for (let i = 0; i < count; i++) {
+    const start = new Date(firstWeek);
+    start.setDate(firstWeek.getDate() + (i * 7));
+
+    weeks.push({
+      Key: weekKeyFromDate(start),
+      Week: isoWeek(start),
+      Year: isoWeekYear(start),
+      Label: formatWeekLabel(start),
+      StartDate: start,
+      StartMs: start.getTime()
+    });
+  }
+
+  return weeks;
 }
 
 function currentIsoWeek() {
@@ -818,16 +895,20 @@ function buildShortageInput(pipelineRows, me2nRows) {
    SHORTAGE MONITOR LOGIC
    ========================================================= */
 
-function calculateProjection(stock, opRate, poByWeek, startWeek, endWeek) {
+function calculateProjection(stock, opRate, poByWeek, weeks) {
   let inventory = Number(stock) || 0;
   const rows = [];
 
-  for (let week = startWeek; week <= endWeek; week++) {
-    const poQty = Number(poByWeek[week] || 0);
+  for (const weekInfo of weeks) {
+    const poQty = Number(poByWeek[weekInfo.Key] || 0);
     inventory = inventory - opRate + poQty;
 
     rows.push({
-      Week:week,
+      Week:weekInfo.Week,
+      Year:weekInfo.Year,
+      WeekLabel:weekInfo.Label,
+      WeekKey:weekInfo.Key,
+      WeekStartMs:weekInfo.StartMs,
       "Op Rate":Math.trunc(opRate),
       "PO Receipt":Math.round(poQty),
       "Projected Inventory":Math.round(inventory)
@@ -837,16 +918,20 @@ function calculateProjection(stock, opRate, poByWeek, startWeek, endWeek) {
   return rows;
 }
 
-function calculateProjectionDecimal(stock, opRate, poByWeek, startWeek, endWeek) {
+function calculateProjectionDecimal(stock, opRate, poByWeek, weeks) {
   let inventory = Number(stock) || 0;
   const rows = [];
 
-  for (let week = startWeek; week <= endWeek; week++) {
-    const poQty = Number(poByWeek[week] || 0);
+  for (const weekInfo of weeks) {
+    const poQty = Number(poByWeek[weekInfo.Key] || 0);
     inventory = inventory - Number(opRate) + poQty;
 
     rows.push({
-      Week:week,
+      Week:weekInfo.Week,
+      Year:weekInfo.Year,
+      WeekLabel:weekInfo.Label,
+      WeekKey:weekInfo.Key,
+      WeekStartMs:weekInfo.StartMs,
       "Op Rate":Number(Number(opRate).toFixed(1)),
       "PO Receipt":Math.round(poQty),
       "Projected Inventory":Number(inventory.toFixed(1))
@@ -856,17 +941,25 @@ function calculateProjectionDecimal(stock, opRate, poByWeek, startWeek, endWeek)
   return rows;
 }
 
-function recommendPoMoves(stock, opRate, poList, startWeek, endWeek) {
+function recommendPoMoves(stock, opRate, poList, weeks) {
   const recommendedPos = [];
 
   const validPos = poList
-    .map(po => ({
-      PO:po.PO ?? "",
-      Week:Number(po.Week),
-      "Open PO Qty":Number(po["Open PO Qty"])
-    }))
+    .map(po => {
+      const deliveryDate = safeDate(po["PO Deliv"]);
+
+      return {
+        PO:po.PO ?? "",
+        DeliveryDate:deliveryDate,
+        WeekStart:deliveryDate ? startOfIsoWeek(deliveryDate) : null,
+        WeekKey:deliveryDate ? weekKeyFromDate(deliveryDate) : "",
+        WeekLabel:deliveryDate ? formatWeekLabel(deliveryDate) : "",
+        "Open PO Qty":Number(po["Open PO Qty"])
+      };
+    })
     .filter(po =>
-      Number.isFinite(po.Week) &&
+      po.WeekStart instanceof Date &&
+      !isNaN(po.WeekStart) &&
       Number.isFinite(po["Open PO Qty"]) &&
       po["Open PO Qty"] > 0
     );
@@ -874,20 +967,20 @@ function recommendPoMoves(stock, opRate, poList, startWeek, endWeek) {
   const poByWeek = {};
 
   for (const po of validPos) {
-    poByWeek[po.Week] =
-      (poByWeek[po.Week] || 0) + po["Open PO Qty"];
+    poByWeek[po.WeekKey] =
+      (poByWeek[po.WeekKey] || 0) + po["Open PO Qty"];
   }
 
   const availablePos = [...validPos];
   let inventory = Number(stock) || 0;
 
-  for (let week = startWeek; week <= endWeek; week++) {
-    const currentReceipt = Number(poByWeek[week] || 0);
+  for (const weekInfo of weeks) {
+    const currentReceipt = Number(poByWeek[weekInfo.Key] || 0);
     inventory = inventory - Number(opRate) + currentReceipt;
 
     while (inventory <= 0) {
       const futurePoIndex = availablePos.findIndex(
-        po => po.Week > week
+        po => po.WeekStart.getTime() > weekInfo.StartMs
       );
 
       if (futurePoIndex === -1) break;
@@ -895,21 +988,22 @@ function recommendPoMoves(stock, opRate, poList, startWeek, endWeek) {
       const nextPo = availablePos.splice(futurePoIndex,1)[0];
 
       const movedQty = nextPo["Open PO Qty"];
-      const originalWeek = nextPo.Week;
+      const originalWeekKey = nextPo.WeekKey;
+      const originalWeekLabel = nextPo.WeekLabel;
 
-      poByWeek[originalWeek] =
-        (poByWeek[originalWeek] || 0) - movedQty;
+      poByWeek[originalWeekKey] =
+        (poByWeek[originalWeekKey] || 0) - movedQty;
 
-      poByWeek[week] =
-        (poByWeek[week] || 0) + movedQty;
+      poByWeek[weekInfo.Key] =
+        (poByWeek[weekInfo.Key] || 0) + movedQty;
 
       inventory += movedQty;
 
       recommendedPos.push({
         PO:nextPo.PO,
         Qty:Math.round(movedQty),
-        "Current Week":originalWeek,
-        "Recommended Week":week,
+        "Current Week":originalWeekLabel,
+        "Recommended Week":weekInfo.Label,
         Action:"Expedite"
       });
     }
@@ -929,18 +1023,19 @@ function groupPoByWeek(rows) {
   const result = {};
 
   for (const r of rows) {
-    const week = Number(r.Week);
+    const deliveryDate = safeDate(r["PO Deliv"]);
     const qty = Number(r["Open PO Qty"]);
 
-    if (!Number.isFinite(week) || !Number.isFinite(qty)) continue;
+    if (!deliveryDate || !Number.isFinite(qty)) continue;
 
-    result[week] = (result[week] || 0) + qty;
+    const key = weekKeyFromDate(deliveryDate);
+    result[key] = (result[key] || 0) + qty;
   }
 
   return result;
 }
 
-function buildCurrentShortageSummary(rows, startWeek, endWeek) {
+function buildCurrentShortageSummary(rows, weeks) {
   const materialMap = new Map();
 
   rows.forEach(r => {
@@ -964,8 +1059,7 @@ function buildCurrentShortageSummary(rows, startWeek, endWeek) {
       stock,
       opRate,
       poByWeek,
-      startWeek,
-      endWeek
+      weeks
     );
 
     const shortageRows = projection.filter(
@@ -980,8 +1074,8 @@ function buildCurrentShortageSummary(rows, startWeek, endWeek) {
 
     summary.push({
       Material:material,
-      "First Red Week":`W${shortageRows[0].Week}`,
-      "First Red Week Sort":shortageRows[0].Week,
+      "First Red Week":shortageRows[0].WeekLabel,
+      "First Red Week Sort":shortageRows[0].WeekStartMs,
       "Minimum Inventory":minimumInventory,
       "Open POs":new Set(matRows.map(r => r.PO)).size
     });
@@ -1085,11 +1179,10 @@ function renderGenerationMetrics() {
 }
 
 function renderAlerts(vendorRows) {
-  const startWeek = currentIsoWeek();
+  const weeks = buildRollingWeeks();
   const alerts = buildCurrentShortageSummary(
     vendorRows,
-    startWeek,
-    52
+    weeks
   );
 
   const msg = document.getElementById("alertsMessage");
@@ -1138,7 +1231,6 @@ function renderAlerts(vendorRows) {
 }
 
 function renderMetrics(row) {
-  const startWeek = currentIsoWeek();
   const stock = Math.round(Number(row.Stock) || 0);
   const alloc = Math.round(Number(row.Alloc) || 0);
   const dr = Number(row.DR) || 0;
@@ -1149,7 +1241,7 @@ function renderMetrics(row) {
     ["Alloc", alloc],
     ["DR", Number(dr.toFixed(1))],
     ["Op Rate", opRate],
-    ["Current Week", `W${startWeek}`]
+    ["Current Week", formatWeekLabel(new Date())]
   ];
 
   document.getElementById("metrics").innerHTML =
@@ -1183,8 +1275,8 @@ function renderOpenPOs(rows) {
         ${rows.map(r => `
           <tr>
             ${headers.map(h => {
-              const val = h === "Week" && r[h] !== null
-                ? `W${r[h]}`
+              const val = h === "Week"
+                ? formatWeekLabel(safeDate(r["PO Deliv"]))
                 : r[h];
               return `<td>${escapeHtml(val)}</td>`;
             }).join("")}
@@ -1206,7 +1298,7 @@ function renderProjection(targetId, rows) {
       <thead>
         <tr>
           <th>Type</th>
-          ${rows.map(r => `<th>W${r.Week}</th>`).join("")}
+          ${rows.map(r => `<th>${escapeHtml(r.WeekLabel)}</th>`).join("")}
         </tr>
       </thead>
       <tbody>
@@ -1262,8 +1354,8 @@ function renderMoves(targetId, rows, successText) {
             <tr>
               <td>${escapeHtml(r.PO)}</td>
               <td>${escapeHtml(r.Qty)}</td>
-              <td>W${escapeHtml(r["Current Week"])}</td>
-              <td>W${escapeHtml(r["Recommended Week"])}</td>
+              <td>${escapeHtml(r["Current Week"])}</td>
+              <td>${escapeHtml(r["Recommended Week"])}</td>
               <td>${escapeHtml(r.Action)}</td>
             </tr>
           `).join("")}
@@ -1319,7 +1411,10 @@ function sortMaterialRows(rows, method) {
   const copy = [...rows];
 
   if (method === "Earliest Delivery First") {
-    copy.sort((a,b) => Number(a.Week) - Number(b.Week));
+    copy.sort((a,b) =>
+      parsePODateForSort(a["PO Deliv"]) -
+      parsePODateForSort(b["PO Deliv"])
+    );
   }
   else if (method === "Oldest PO First") {
     copy.sort((a,b) =>
@@ -1367,8 +1462,7 @@ function runMainAnalysis() {
   const stock = Math.round(Number(first.Stock) || 0);
   const dr = Number(first.DR) || 0;
   const opRate = Math.ceil(dr * 5);
-  const startWeek = currentIsoWeek();
-  const endWeek = 52;
+  const weeks = buildRollingWeeks();
 
   document.getElementById("materialTitle").textContent =
     `Material: ${material}`;
@@ -1382,15 +1476,14 @@ function runMainAnalysis() {
     stock,
     opRate,
     poByWeekCurrent,
-    startWeek,
-    endWeek
+    weeks
   );
 
   renderProjection("currentScenario", currentProjection);
 
   const poList = rows.map(r => ({
     PO:r.PO,
-    Week:r.Week,
+    "PO Deliv":r["PO Deliv"],
     "Open PO Qty":r["Open PO Qty"]
   }));
 
@@ -1398,16 +1491,14 @@ function runMainAnalysis() {
     stock,
     opRate,
     poList,
-    startWeek,
-    endWeek
+    weeks
   );
 
   const recommendedProjection = calculateProjection(
     stock,
     opRate,
     recommended.poByWeek,
-    startWeek,
-    endWeek
+    weeks
   );
 
   renderProjection(
@@ -1440,7 +1531,7 @@ function runMainAnalysis() {
 
     document.getElementById("finalStatus").innerHTML = `
       <div class="alert error">
-        CRITICAL: El material entra en negativo en W${negatives[0].Week}.
+        CRITICAL: El material entra en negativo en ${negatives[0].WeekLabel}.
         Inventario mínimo proyectado: ${worst}
       </div>
     `;
@@ -1469,8 +1560,7 @@ function runManualScenario() {
     ? manualRate
     : originalOpRate;
 
-  const startWeek = currentIsoWeek();
-  const endWeek = 52;
+  const weeks = buildRollingWeeks();
 
   const poByWeekCurrent = groupPoByWeek(currentMaterialRows);
 
@@ -1478,8 +1568,7 @@ function runManualScenario() {
     stock,
     rate,
     poByWeekCurrent,
-    startWeek,
-    endWeek
+    weeks
   );
 
   renderProjection("manualBefore", manualCurrent);
@@ -1492,7 +1581,7 @@ function runManualScenario() {
     document.getElementById("manualBeforeMessage").innerHTML = `
       <div class="alert warning">
         With a weekly OP Rate of ${rate.toFixed(1)},
-        the first shortage occurs in W${beforeNegative[0].Week}.
+        the first shortage occurs in ${beforeNegative[0].WeekLabel}.
       </div>
     `;
   } else {
@@ -1501,7 +1590,7 @@ function runManualScenario() {
 
   const poList = currentMaterialRows.map(r => ({
     PO:r.PO,
-    Week:r.Week,
+    "PO Deliv":r["PO Deliv"],
     "Open PO Qty":r["Open PO Qty"]
   }));
 
@@ -1509,16 +1598,14 @@ function runManualScenario() {
     stock,
     rate,
     poList,
-    startWeek,
-    endWeek
+    weeks
   );
 
   const manualAfter = calculateProjectionDecimal(
     stock,
     rate,
     manualRecommended.poByWeek,
-    startWeek,
-    endWeek
+    weeks
   );
 
   renderProjection("manualAfter", manualAfter);
@@ -1536,14 +1623,14 @@ function runManualScenario() {
   if (!remainingNegative.length) {
     document.getElementById("manualAfterMessage").innerHTML = `
       <div class="alert success">
-        MANUAL SCENARIO: The recommended PO actions prevent shortage through W52.
+        MANUAL SCENARIO: The recommended PO actions prevent shortage through ${weeks[weeks.length - 1].Label}.
       </div>
     `;
   } else {
     document.getElementById("manualAfterMessage").innerHTML = `
       <div class="alert error">
         MANUAL SCENARIO: Inventory remains negative from
-        W${remainingNegative[0].Week}; existing POs are not sufficient.
+        ${remainingNegative[0].WeekLabel}; existing POs are not sufficient.
       </div>
     `;
   }
