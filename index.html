@@ -282,7 +282,7 @@
       </div>
 
       <div class="upload-box">
-        <strong>ME2N.XLSX</strong>
+        <strong>ME2L.XLSX</strong>
         <input id="me2nFile" type="file" accept=".xlsx,.xls" />
       </div>
     </div>
@@ -791,7 +791,7 @@ function buildShortageInput(pipelineRows, me2nRows) {
   validateColumns(
     me2nRows,
     me2nRequired,
-    "ME2N.XLSX"
+    "ME2L.XLSX"
   );
 
   const poReqSource = firstExistingColumn(
@@ -1175,7 +1175,7 @@ function renderGenerationMetrics() {
   `).join("");
 
   document.getElementById("summaryText").textContent =
-    "Pipeline + ME2N processed successfully.";
+    "Pipeline + ME2L processed successfully.";
 }
 
 function renderAlerts(vendorRows) {
@@ -1652,7 +1652,7 @@ document.getElementById("generateBtn").addEventListener("click", async () => {
   if (!pipelineFile || !me2nFile) {
     msg.innerHTML = `
       <div class="alert warning">
-        Selecciona Pipeline_Rate.XLSX y ME2N.XLSX.
+        Selecciona Pipeline_Rate.XLSX y ME2L.XLSX.
       </div>
     `;
     return;
