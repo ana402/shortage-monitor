@@ -282,8 +282,8 @@
       </div>
 
       <div class="upload-box">
-        <strong>ME2L.XLSX</strong>
-        <input id="me2nFile" type="file" accept=".xlsx,.xls" />
+        <strong>ME2M.XLSX</strong>
+        <input id="me2mFile" type="file" accept=".xlsx,.xls" />
       </div>
     </div>
 
@@ -697,7 +697,7 @@ function validateColumns(rows, required, fileName) {
    Same logic as the Python generator
    ========================================================= */
 
-function buildShortageInput(pipelineRows, me2nRows) {
+function buildShortageInput(pipelineRows, me2mRows) {
 
   const pipelineRequired = [
     "Material",
@@ -789,13 +789,13 @@ function buildShortageInput(pipelineRows, me2nRows) {
   ];
 
   validateColumns(
-    me2nRows,
+    me2mRows,
     me2nRequired,
-    "ME2L.XLSX"
+    "ME2M.XLSX"
   );
 
   const poReqSource = firstExistingColumn(
-    me2nRows,
+    me2mRows,
     [
       "Purchase Requisition",
       "Purchase requisition",
@@ -807,7 +807,7 @@ function buildShortageInput(pipelineRows, me2nRows) {
 
   const merged = [];
 
-  for (const r of me2nRows) {
+  for (const r of me2mRows) {
     const material = cleanText(r["Material"]);
     const plant = cleanText(r["Plant"]);
     const key = `${material}|||${plant}`;
@@ -1175,7 +1175,7 @@ function renderGenerationMetrics() {
   `).join("");
 
   document.getElementById("summaryText").textContent =
-    "Pipeline + ME2L processed successfully.";
+    "Pipeline + ME2M processed successfully.";
 }
 
 function renderAlerts(vendorRows) {
@@ -1646,13 +1646,13 @@ function runManualScenario() {
 
 document.getElementById("generateBtn").addEventListener("click", async () => {
   const pipelineFile = document.getElementById("pipelineFile").files[0];
-  const me2nFile = document.getElementById("me2nFile").files[0];
+  const me2mFile = document.getElementById("me2mFile").files[0];
   const msg = document.getElementById("processMessage");
 
-  if (!pipelineFile || !me2nFile) {
+  if (!pipelineFile || !me2mFile) {
     msg.innerHTML = `
       <div class="alert warning">
-        Selecciona Pipeline_Rate.XLSX y ME2L.XLSX.
+        Selecciona Pipeline_Rate.XLSX y ME2M.XLSX.
       </div>
     `;
     return;
@@ -1665,14 +1665,14 @@ document.getElementById("generateBtn").addEventListener("click", async () => {
   `;
 
   try {
-    const [pipelineRows, me2nRows] = await Promise.all([
+    const [pipelineRows, me2mRows] = await Promise.all([
       readExcelFile(pipelineFile),
-      readExcelFile(me2nFile)
+      readExcelFile(me2mFile)
     ]);
 
     const result = buildShortageInput(
       pipelineRows,
-      me2nRows
+      me2mRows
     );
 
     shortageData = result.rows;
